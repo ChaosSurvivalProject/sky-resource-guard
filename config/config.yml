@@ -1,0 +1,69 @@
+# SKY Resource Guard - default-safe configuration (task book 14)
+#
+# This file documents the intended contract. P0 ships NO installable plugin,
+# so it is NOT loaded at runtime yet. Do not put secrets in this file.
+sky:
+  # First install MUST stay in SHADOW. Never start in AUTOMATE.
+  mode: SHADOW                  # SHADOW / ADVISE / PROTECT / AUTOMATE
+  automation-enabled: false
+  write-config-dry-run: true
+  unknown-plugin-policy: OBSERVE_ONLY
+
+  # Initial CANDIDATE thresholds. These are NOT universal defaults and MUST be
+  # calibrated on the target hardware before PROTECT/AUTOMATE is considered.
+  state-machine:
+    watch-mspt-p95-ms: 40.0          # 1s window
+    degrade-mspt-p99-ms: 50.0        # 10s window
+    critical-tick-ms: 100
+    enter-violations: 3              # sustained violation required
+    exit-violations: 12              # lower threshold + longer duration (hysteresis)
+    action-cooldown-ms: 5000
+    recovery-step-limit: 1           # one major action at a time
+
+  tick-sampling:
+    enabled: true
+    max-overhead-p99-ms: 1.0         # over-budget -> automatic downsampling
+    ring-buffer-size: 1024
+
+  world:
+    simulation-distance-min: 4
+    spawn-budget-enabled: false
+    drop-merge-enabled: false
+    restore-per-tick-limit: 32       # avoid a restore storm
+
+  memory:
+    reject-new-cache-first: true
+    forbid-forced-gc: true           # hard constraint, not a tunable
+
+  ai:
+    enabled: false                   # AI is off by default
+    provider: deepseek
+    # Display name, provider, base URL, model alias and key reference are kept
+    # separate so the core never binds to a vendor SDK type.
+    display-name: "DeepSeek V4.1 Flash"
+    base-url: ${SKY_AI_BASE_URL}
+    api-key-ref: secret:sky/ai-api-key
+    model-alias: deepseek-flash
+    chat-path: /chat/completions
+    timeout-ms: 8000
+    max-inflight: 2
+    queue-capacity: 32
+    allow-execute: false             # never let AI execute anything by itself
+    prompt-schema-version: 1
+
+  permissions:
+    economy-write: sky.approve.critical
+    inventory-write: sky.approve.critical
+    irreversible: sky.approve.critical
+
+  audit:
+    enabled: true
+    hash-chain: true
+    redact: [uuid, ip, chat, coordinates, nbt, token, password, hostname]
+
+  features:
+    p0-observation: true
+    p1-world-protection: false
+    p2-participant-scheduling: false
+    p3-ai-assistant: false
+    p4-strong-isolation: false

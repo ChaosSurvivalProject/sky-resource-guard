@@ -1,0 +1,53 @@
+# --- Gradle / build output ---
+.gradle/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# --- Runtime / server (never commit) ---
+run/
+server/
+logs/
+*.log
+world/
+worlds/
+world_nether/
+world_the_end/
+plugins/
+cache/
+crash-reports/
+
+# --- Secrets (task book 18.2) ---
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.jks
+*.keystore
+*token*
+*secret*
+!docs/**/*secret*
+secrets/
+
+# --- Diagnostic artefacts (may contain player data / NBT) ---
+*.hprof
+thread-dump*.txt
+diagnostic-*.zip
+diagnostic-*.json
+*.nbt
+playerdata/
+
+# --- OS ---
+.DS_Store
+Thumbs.db

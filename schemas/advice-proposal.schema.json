@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/ChaosSurvivalProject/sky-resource-guard/main/schemas/advice-proposal.schema.json",
+  "title": "SKY AdviceProposal v1",
+  "description": "The only shape an AI provider may return. Advisory only: SKY never executes an action straight from this payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "hypotheses",
+    "confidence",
+    "evidenceRefs",
+    "recommendedDryRuns",
+    "risk",
+    "rollback",
+    "missingEvidence"
+  ],
+  "properties": {
+    "hypotheses": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 512 },
+      "maxItems": 32
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 256 },
+      "maxItems": 64
+    },
+    "recommendedDryRuns": {
+      "type": "array",
+      "description": "Identifiers of PRE-REGISTERED action kinds. Anything else is rejected.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "SIMULATION_DISTANCE",
+          "SPAWN_BUDGET",
+          "ACTIVATION_BUDGET",
+          "DROP_MERGE",
+          "DROP_FREEZE",
+          "CACHE_EVICT",
+          "TASK_SUSPEND",
+          "PLUGIN_LOW_POWER",
+          "PLUGIN_QUIESCE",
+          "VIEW_DISTANCE"
+        ]
+      },
+      "maxItems": 16
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH"]
+    },
+    "rollback": {
+      "type": "string",
+      "maxLength": 1024
+    },
+    "missingEvidence": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 512 },
+      "maxItems": 64
+    }
+  }
+}

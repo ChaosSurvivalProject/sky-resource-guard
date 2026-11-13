@@ -1,0 +1,32 @@
+name: Feature / increment proposal
+description: Propose one verifiable P0-P4 increment
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Roadmap stage
+      options: ["P0 observation", "P1 world protection", "P2 participant scheduling", "P3 AI assistant", "P4 strong isolation"]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and evidence
+      description: "What is observed, and with which independent signals?"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Minimal verifiable increment
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Safety boundaries
+      description: "Which hard constraints apply? What is explicitly out of scope?"
+    validations:
+      required: true

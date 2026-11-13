@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Validate JSON Schemas
+        run: |
+          python3 -m pip install --quiet jsonschema
+          python3 tools/validate-schemas.py
+
+      - name: Style / static checks (equivalent to Spotless + Checkstyle)
+        run: |
+          bash tools/check-style.sh
+          bash tools/check-dependencies.sh
+
+      - name: Security-sensitive pattern scan
+        run: bash tools/scan-sensitive.sh
+
+      - name: Build, unit tests and javadoc
+        run: ./gradlew clean build javadoc --no-daemon
+
+      - name: Publish PR test artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/test/**
+            **/build/reports/javadoc/**
+          if-no-files-found: warn
