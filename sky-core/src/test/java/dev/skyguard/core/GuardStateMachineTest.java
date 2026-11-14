@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.skyguard.api.GuardState;
 import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** Task book 15.1: state-machine boundaries and hysteresis. */
@@ -96,5 +97,41 @@ class GuardStateMachineTest {
         }
         assertEquals(GuardState.NORMAL, machine.state());
         assertTrue(steps >= 2, "CRITICAL must not recover to NORMAL in a single step");
+    }
+
+    @Test
+    void historyIsBoundedAndEvictionIsObservable() {
+        GuardStateMachine machine = new GuardStateMachine(StateThresholds.initialCandidates(), 3);
+        assertEquals(3, machine.historyLimit());
+        assertEquals(0, machine.historyDropped());
+        // Each lockout + manual reset writes two transition records: 20 total.
+        for (int i = 0; i < 10; i++) {
+            machine.lockout("reason-" + i, T.plusSeconds(i));
+            machine.manualResetToNormal(T.plusSeconds(i));
+        }
+        List<String> retained = machine.history();
+        assertEquals(3, retained.size(), "history must not grow without bound");
+        assertTrue(machine.historyDropped() > 0, "truncation must be observable, never silent");
+        assertTrue(retained.stream().anyMatch(s -> s.contains("reason-9")),
+                "the most recent transition must survive");
+        assertFalse(retained.stream().anyMatch(s -> s.contains("reason-0")),
+                "the oldest transition must be evicted");
+    }
+
+    @Test
+    void historyLimitMustBePositive() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new GuardStateMachine(StateThresholds.initialCandidates(), 0));
+    }
+
+    @Test
+    void tryBeginActionReservesTheSlotAtomically() {
+        GuardStateMachine machine = new GuardStateMachine(StateThresholds.initialCandidates());
+        assertTrue(machine.tryBeginAction(T));
+        assertFalse(machine.requestActionSlot(T), "the slot must already be marked in-flight");
+        assertFalse(machine.tryBeginAction(T), "no second caller may win the same slot");
+        machine.markActionFinished();
+        assertFalse(machine.tryBeginAction(T.plusSeconds(1)), "cooldown still applies");
+        assertTrue(machine.tryBeginAction(T.plusSeconds(6)));
     }
 }

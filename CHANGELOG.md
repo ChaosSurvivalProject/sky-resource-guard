@@ -4,6 +4,54 @@ All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/) for the public `sky-api` surface and
 [Conventional Commits](https://www.conventionalcommits.org/) for commit messages.
 
+## [Unreleased]
+
+Status: still **experimental, not installable on a server**. This is a
+hardening and open-source governance increment: no server artifact was
+resolved, no performance claim was added, and `docs/version-matrix.md` keeps its
+`UNRESOLVED` entries.
+
+### Fixed
+
+- `GuardStateMachine` stored transition history in an unbounded `ArrayList`.
+  On a long-running server it grew forever and the SHADOW report grew with it.
+  It is now a bounded deque (default 256, configurable) with an observable
+  `historyDropped()` counter, so truncation is never silent.
+- Action-slot reservation had a check-then-act race between the separately
+  synchronized `requestActionSlot` and `markActionStarted`. Added an atomic
+  `tryBeginAction`, now used by `ActionGateway`.
+- `ActionGateway` **leaked an active lease when the verifier or rollback
+  threw** (the `release` call was skipped). Lease release now lives in a
+  `finally`; any throwing collaborator is treated as an unverified change, so
+  it is rolled back and escalates to `LOCKOUT` if the rollback also fails.
+  Only the exception class is audited, never the message.
+- `LeaseManager.expire` silently discarded expired leases, which made the
+  "lost/expired lease restores old state" guarantee impossible to implement.
+  Added `drainExpired(Instant)`, returning the expired leases with their old
+  value and rollback action for the caller to restore.
+- `MetricsRingBuffer.max()` started at `0.0` and walked raw indexes: it clamped
+  negative-valued metrics and did not express the live ring window. The
+  running sum is also recomputed once per full lap to bound floating-point
+  drift on long-running servers.
+
+### Added
+
+- 12 regression tests (70 -> 82): bounded history, atomic action slot, four
+  exception-path lease-release cases, expired-lease recovery, and ring-buffer
+  window/max/drift checks.
+- `.github/dependabot.yml` (Gradle + GitHub Actions, weekly),
+  `.github/CODEOWNERS`, `SUPPORT.md`, `GOVERNANCE.md`.
+- CI: concurrency control, 20-minute timeout, `persist-credentials: false`.
+- Release workflow: a real gate that refuses **stable** tags while the version
+  matrix contains `UNRESOLVED` entries (experimental tags stay allowed but are
+  published as GitHub pre-releases), plus tag-ref validation.
+- README badges and links to the support/governance documents.
+
+### Changed
+
+- Repository settings (not tracked files): `main` branch protection requiring
+  the CI status check, Dependabot security updates, vulnerability alerts.
+
 ## [0.1.0] - 2026-11-13 - P0 / experimental
 
 Status: **experimental, not installable on a server yet.** This is the first

@@ -4,7 +4,13 @@
 > **当前状态：实验性（P0 可信观测）**。这一版是纯 Java 核心逻辑，**尚不能作为插件安装到服务端**。
 
 [![CI](https://github.com/ChaosSurvivalProject/sky-resource-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaosSurvivalProject/sky-resource-guard/actions/workflows/ci.yml)
-License: **GPL-3.0-or-later** · Java **21** · Package `dev.skyguard.api`
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Java 21](https://img.shields.io/badge/Java-21-f89820.svg)](https://openjdk.org/projects/jdk/21/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Status: experimental](https://img.shields.io/badge/status-experimental-yellow.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/github/v/release/ChaosSurvivalProject/sky-resource-guard?include_prereleases)](https://github.com/ChaosSurvivalProject/sky-resource-guard/releases)
+
+License: **GPL-3.0-or-later** · Java **21** · Package `dev.skyguard.api` · [支持](SUPPORT.md) · [治理](GOVERNANCE.md)
 
 ---
 
@@ -32,7 +38,8 @@ SKY 的目标不是宣称"恒定 20 TPS"或"零延迟"，而是建立一个：
 - 资源参与者 SPI、外部插件适配器 SPI、四级证据（L0–L3）与 `OBSERVE_ONLY` 默认策略；
 - 掉落物状态机（NORMAL → MERGED → FROZEN → SERIALIZED → RESTORING → NORMAL）与保护规则；
 - 可运行的 SHADOW 报告 CLI 演示、测试假实现与确定性压测场景；
-- 两个示例适配器（原生 SPI 与 `ExternalPluginAdapter`）。
+- 两个示例适配器（原生 SPI 与 `ExternalPluginAdapter`）；
+- **有界内存与异常安全**：状态机转移历史、事件总线、指标环形缓冲均有容量上限；动作网关在 executor / verifier / rollback 抛异常时同样释放租约并执行回滚，过期租约可回收以恢复旧状态（见 [CHANGELOG.md](CHANGELOG.md)）。
 
 **不能做（明确非目标，任务书 §1.2 / §20）**
 
@@ -171,6 +178,11 @@ AI 可以聚类错误、解释时间线、提出假设、推荐预注册动作�
 
 ## 参与贡献与许可
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)、[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[RELEASE.md](RELEASE.md)。
+- [CONTRIBUTING.md](CONTRIBUTING.md) —— 一个 PR 只做一个可验证增量、不得编造事实
+- [GOVERNANCE.md](GOVERNANCE.md) —— 角色、决策方式、CI 门禁与发布审批
+- [SUPPORT.md](SUPPORT.md) —— 提问渠道与实验性项目的支持边界
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)、[RELEASE.md](RELEASE.md)、[SECURITY.md](SECURITY.md)
 
-本项目采用 **GPL-3.0-or-later**（[LICENSE](LICENSE)）。不混入来源不明或许可证不兼容的代码；依赖许可证清单见 [`docs/architecture.md`](docs/architecture.md)。
+`main` 分支受保护：合并前必须通过 CI（Schema 校验、静态检查、依赖审查、敏感扫描、构建 + 测试 + javadoc）。依赖升级由 Dependabot 每周自动提 PR，同样走此门禁。
+
+本项目采用 **GPL-3.0-or-later**（[LICENSE](LICENSE)），贡献无需签署 CLA，也不转移版权；所有源文件带 SPDX 头。不混入来源不明或许可证不兼容的代码；依赖许可证清单见 [`docs/architecture.md`](docs/architecture.md)。

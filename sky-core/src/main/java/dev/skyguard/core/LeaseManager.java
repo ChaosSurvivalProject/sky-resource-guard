@@ -21,8 +21,9 @@ import java.util.UUID;
 /**
  * Time-bounded, single-target leases (task book 10). A second action on the
  * same target is rejected while a lease is active, preventing two concurrent
- * writes from racing. Expired leases are purged and their old state restored by
- * the caller's rollback path.
+ * writes from racing. Expired leases are returned by {@link
+ * #drainExpired(Instant)} so the caller can restore each old state through the
+ * lease's rollback action; silently dropping them would lose that state.
  */
 public final class LeaseManager {
 
@@ -70,16 +71,29 @@ public final class LeaseManager {
         return active.values().stream().anyMatch(l -> l.target().equals(target));
     }
 
-    /** Purge expired leases. Returns how many were removed. */
-    public synchronized int expire(Instant now) {
-        List<String> expired = new ArrayList<>();
-        for (Map.Entry<String, Lease> e : active.entrySet()) {
-            if (e.getValue().isExpired(now)) {
-                expired.add(e.getKey());
+    /**
+     * Remove and return every expired lease, oldest first (insertion order).
+     * An expired lease is an unverified change: the caller MUST run each
+     * lease's {@code rollbackAction} to restore {@code oldValue}. Returning the
+     * leases is what makes the "lost / expired lease recovers old state"
+     * guarantee from task book 10 implementable; a bare purge cannot do it.
+     */
+    public synchronized List<Lease> drainExpired(Instant now) {
+        List<Lease> expired = new ArrayList<>();
+        var iterator = active.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Lease lease = iterator.next().getValue();
+            if (lease.isExpired(now)) {
+                expired.add(lease);
+                iterator.remove();
             }
         }
-        expired.forEach(active::remove);
-        return expired.size();
+        return List.copyOf(expired);
+    }
+
+    /** Purge expired leases. Returns how many were removed. */
+    public synchronized int expire(Instant now) {
+        return drainExpired(now).size();
     }
 
     public synchronized int activeCount(Instant now) {

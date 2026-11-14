@@ -34,13 +34,33 @@ class ActionGatewayTest {
         final List<String> audit = new ArrayList<>();
         boolean verifyOk = true;
         boolean rollbackOk = true;
+        boolean verifierThrows;
+        boolean executorThrows;
+        boolean rollbackThrows;
         int applyCalls;
         int rollbackCalls;
         final ActionGateway gateway = new ActionGateway(
                 leases, machine,
-                (intent, lease) -> { applyCalls++; return intent.newValue(); },
-                (intent, lease, observed) -> verifyOk && observed.equals(intent.newValue()),
-                (intent, lease) -> { rollbackCalls++; return rollbackOk; },
+                (intent, lease) -> {
+                    applyCalls++;
+                    if (executorThrows) {
+                        throw new IllegalStateException("simulated executor failure");
+                    }
+                    return intent.newValue();
+                },
+                (intent, lease, observed) -> {
+                    if (verifierThrows) {
+                        throw new IllegalStateException("simulated verifier failure");
+                    }
+                    return verifyOk && observed.equals(intent.newValue());
+                },
+                (intent, lease) -> {
+                    rollbackCalls++;
+                    if (rollbackThrows) {
+                        throw new IllegalStateException("simulated rollback failure");
+                    }
+                    return rollbackOk;
+                },
                 audit::add);
     }
 
@@ -145,5 +165,55 @@ class ActionGatewayTest {
         assertTrue(lease.get().isExpired(T.plusSeconds(2)));
         assertEquals(1, h.leases.expire(T.plusSeconds(2)));
         assertEquals(0, h.leases.activeCount(T.plusSeconds(2)));
+    }
+
+    @Test
+    void throwingVerifierReleasesLeaseAndRollsBack() {
+        Harness h = new Harness();
+        h.verifierThrows = true;
+        ActionResult result = h.gateway.execute(Intents.valid(ActionKind.SIMULATION_DISTANCE), T);
+        assertEquals(ErrorCode.VERIFICATION_FAILED, result.code());
+        assertTrue(result.rolledBack());
+        assertEquals(1, h.rollbackCalls);
+        assertEquals(0, h.leases.activeCount(T), "lease must be released when the verifier throws");
+        assertTrue(h.audit.stream().anyMatch(s -> s.startsWith("ERROR")),
+                "the failure must be audited without the exception message");
+        assertFalse(h.audit.stream().anyMatch(s -> s.contains("simulated verifier failure")),
+                "exception messages may carry sensitive data and must not be logged");
+    }
+
+    @Test
+    void throwingExecutorReleasesLeaseAndRollsBack() {
+        Harness h = new Harness();
+        h.executorThrows = true;
+        ActionResult result = h.gateway.execute(Intents.valid(ActionKind.SPAWN_BUDGET), T);
+        assertEquals(ErrorCode.INTERNAL_ERROR, result.code());
+        assertTrue(result.rolledBack());
+        assertEquals(1, h.rollbackCalls);
+        assertEquals(0, h.leases.activeCount(T));
+        assertEquals(GuardState.NORMAL, h.machine.state(), "a successful rollback must not lock out");
+    }
+
+    @Test
+    void throwingRollbackEntersLockoutAndStillReleasesLease() {
+        Harness h = new Harness();
+        h.verifyOk = false;
+        h.rollbackThrows = true;
+        ActionResult result = h.gateway.execute(Intents.valid(ActionKind.SIMULATION_DISTANCE), T);
+        assertEquals(ErrorCode.ROLLBACK_FAILED, result.code());
+        assertFalse(result.rolledBack());
+        assertEquals(GuardState.LOCKOUT, h.machine.state());
+        assertEquals(0, h.leases.activeCount(T), "lease must be released even when rollback throws");
+    }
+
+    @Test
+    void exceptionInCollaboratorLocksOutWhenRollbackAlsoFails() {
+        Harness h = new Harness();
+        h.verifierThrows = true;
+        h.rollbackOk = false;
+        ActionResult result = h.gateway.execute(Intents.valid(ActionKind.SPAWN_BUDGET), T);
+        assertEquals(ErrorCode.VERIFICATION_FAILED, result.code());
+        assertEquals(GuardState.LOCKOUT, h.machine.state());
+        assertEquals(0, h.leases.activeCount(T));
     }
 }

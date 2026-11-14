@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 SKY Resource Guard contributors
 name: Release
 
 on:
@@ -11,6 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,12 +25,26 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      # A release must not be cut while the target server build is unresolved.
-      - name: Block unresolved version matrix
+      - name: Validate tag ref
         run: |
-          if grep -q 'UNRESOLVED' docs/version-matrix.md; then
-            echo "::warning::docs/version-matrix.md still contains UNRESOLVED entries."
-            echo "Review them before publishing a production release (see RELEASE.md)."
+          if [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            echo "::error::Release must run on a tag; workflow_dispatch on a branch is not supported."
+            exit 1
+          fi
+          echo "Releasing ${GITHUB_REF_NAME}"
+
+      # A STABLE release must not be cut while the target server build is
+      # unresolved. Experimental pre-release tags are allowed (and marked as
+      # pre-releases), but their unresolved entries are printed for review.
+      - name: Enforce resolved version matrix
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ -(alpha|beta|rc|p0|experimental) ]]; then
+            echo "Experimental pre-release: UNRESOLVED entries are permitted but listed below."
+            grep -n 'UNRESOLVED' docs/version-matrix.md || true
+          elif grep -q 'UNRESOLVED' docs/version-matrix.md; then
+            echo "::error::Refusing a stable release: docs/version-matrix.md still has UNRESOLVED entries."
+            echo "Pin and verify the Purpur build before tagging (see RELEASE.md)."
+            exit 1
           fi
 
       - name: Build and test
@@ -43,7 +60,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/* \
-            --generate-notes --verify-tag
+          if [[ "${GITHUB_REF_NAME}" =~ -(alpha|beta|rc|p0|experimental) ]]; then
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --generate-notes --verify-tag --prerelease
+          else
+            gh release create "${GITHUB_REF_NAME}" dist/* \
+              --generate-notes --verify-tag
+          fi
 
       # Deliberately NO deployment to a production server (task book 18.4).

@@ -33,6 +33,16 @@ public final class MetricsRingBuffer {
         values[cursor] = value;
         sum += value;
         cursor = (cursor + 1) % values.length;
+        // Recompute the running sum once per full lap. Repeated += / -= on a
+        // long-running server accumulates floating-point drift; a full lap
+        // touches every slot anyway, so this is bounded and cheap.
+        if (cursor == 0) {
+            double recomputed = 0.0;
+            for (double v : values) {
+                recomputed += v;
+            }
+            sum = recomputed;
+        }
     }
 
     public synchronized int size() {
@@ -71,10 +81,20 @@ public final class MetricsRingBuffer {
         return sorted[Math.max(0, Math.min(rank, sorted.length - 1))];
     }
 
+    /**
+     * Maximum over the <em>live window</em> only. Walking indexes 0..size-1
+     * happens to work for a never-cleared buffer but is not the ring's window
+     * semantics; starting at -Infinity also keeps negative-valued metrics
+     * correct instead of clamping them to 0.
+     */
     public synchronized double max() {
-        double m = 0.0;
+        if (size == 0) {
+            return 0.0;
+        }
+        double m = Double.NEGATIVE_INFINITY;
+        int start = (cursor - size + values.length) % values.length;
         for (int i = 0; i < size; i++) {
-            m = Math.max(m, values[i]);
+            m = Math.max(m, values[(start + i) % values.length]);
         }
         return m;
     }

@@ -113,4 +113,39 @@ class MetricsAndPolicyTest {
         assertEquals(ErrorCode.UNAUTHORIZED_ACTION, decision.code());
         assertTrue(Double.isFinite(PolicyEngine.priorityScore(1, 1, 1, 1, 0, 0)));
     }
+
+    @Test
+    void ringBufferMaxUsesLiveWindowAndHandlesNegativeValues() {
+        MetricsRingBuffer buffer = new MetricsRingBuffer(3);
+        for (double v : List.of(-5.0, -2.0, -9.0, -1.0)) {
+            buffer.add(v);
+        }
+        // After the wrap the live window is [-2, -9, -1]; the evicted -5 and
+        // the old "start at 0" behaviour must not affect the result.
+        assertEquals(3, buffer.size());
+        assertEquals(-1.0, buffer.max(), 1e-9);
+    }
+
+    @Test
+    void ringBufferMeanMatchesItsSnapshotAfterManyWraps() {
+        MetricsRingBuffer buffer = new MetricsRingBuffer(8);
+        for (int i = 0; i < 1000; i++) {
+            buffer.add(1_000_000.0 + (i % 17) * 0.37);
+        }
+        double[] snap = buffer.snapshot();
+        double expected = 0.0;
+        for (double v : snap) {
+            expected += v;
+        }
+        expected /= snap.length;
+        assertEquals(expected, buffer.mean(), 1e-9,
+                "incremental += / -= must not drift away from the live window");
+    }
+
+    @Test
+    void emptyRingBufferReportsZeroMax() {
+        MetricsRingBuffer buffer = new MetricsRingBuffer(4);
+        assertEquals(0.0, buffer.max(), 1e-9);
+        assertEquals(0.0, buffer.mean(), 1e-9);
+    }
 }

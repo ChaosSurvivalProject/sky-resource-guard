@@ -7,7 +7,8 @@ package dev.skyguard.core;
 import dev.skyguard.api.GuardState;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
 
@@ -27,11 +28,21 @@ import java.util.Objects;
  *
  * <p>Time is passed in explicitly, so the whole machine is deterministic and
  * testable without a clock, a server or a scheduler.</p>
+ *
+ * <p>The transition history is <b>bounded</b>: on a long-running server an
+ * unbounded list would grow forever and the SHADOW report would grow with it.
+ * Only the most recent {@link #DEFAULT_HISTORY_LIMIT} entries are retained;
+ * {@link #historyDropped()} counts what was evicted so truncation is always
+ * observable rather than silent.</p>
  */
 public final class GuardStateMachine {
 
+    /** Retained transition records. Chosen to cover days of normal operation. */
+    public static final int DEFAULT_HISTORY_LIMIT = 256;
+
     private final StateThresholds thresholds;
-    private final List<String> history = new ArrayList<>();
+    private final int historyLimit;
+    private final Deque<String> history = new ArrayDeque<>();
 
     private GuardState state = GuardState.NORMAL;
     private int violationStreak;
@@ -40,9 +51,18 @@ public final class GuardStateMachine {
     private Instant lastActionAt;
     private boolean actionInFlight;
     private String lockoutReason;
+    private long historyDropped;
 
     public GuardStateMachine(StateThresholds thresholds) {
+        this(thresholds, DEFAULT_HISTORY_LIMIT);
+    }
+
+    public GuardStateMachine(StateThresholds thresholds, int historyLimit) {
         this.thresholds = Objects.requireNonNull(thresholds, "thresholds");
+        if (historyLimit < 1) {
+            throw new IllegalArgumentException("historyLimit must be >= 1");
+        }
+        this.historyLimit = historyLimit;
     }
 
     public synchronized GuardState state() {
@@ -53,8 +73,18 @@ public final class GuardStateMachine {
         return lockoutReason;
     }
 
+    /** Most recent transition records, oldest first. Never grows without bound. */
     public synchronized List<String> history() {
         return List.copyOf(history);
+    }
+
+    public synchronized int historyLimit() {
+        return historyLimit;
+    }
+
+    /** Number of transition records evicted by the bound. */
+    public synchronized long historyDropped() {
+        return historyDropped;
     }
 
     /** Feed one observation window. Returns the resulting state. */
@@ -153,6 +183,20 @@ public final class GuardStateMachine {
         lastActionAt = now;
     }
 
+    /**
+     * Atomically check and reserve the single action slot. Callers should use
+     * this instead of {@link #requestActionSlot(Instant)} followed by
+     * {@link #markActionStarted(Instant)}: those two are individually
+     * synchronized, so a second caller could win the check in between.
+     */
+    public synchronized boolean tryBeginAction(Instant now) {
+        if (!requestActionSlot(now)) {
+            return false;
+        }
+        markActionStarted(now);
+        return true;
+    }
+
     public synchronized void markActionFinished() {
         actionInFlight = false;
     }
@@ -216,7 +260,12 @@ public final class GuardStateMachine {
         };
     }
 
+    /** Always called from a synchronized method: the deque needs no own lock. */
     private void note(Instant now, String message) {
-        history.add(now + " " + message);
+        history.addLast(now + " " + message);
+        while (history.size() > historyLimit) {
+            history.removeFirst();
+            historyDropped++;
+        }
     }
 }

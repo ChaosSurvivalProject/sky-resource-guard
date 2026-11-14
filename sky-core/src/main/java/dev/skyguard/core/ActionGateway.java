@@ -24,8 +24,15 @@ import java.util.Optional;
  *
  * <p>Fail-safe rules implemented here: a dry-run never acquires a lease and
  * never applies; verification failure rolls back automatically; a failed
- * rollback enters LOCKOUT; a lost/expired lease is purged by {@link
- * LeaseManager}; actions that could double-write are not retried.</p>
+ * rollback enters LOCKOUT; an expired lease is recoverable through {@link
+ * LeaseManager#drainExpired(Instant)}; actions that could double-write are not
+ * retried.</p>
+ *
+ * <p><b>Lease release is unconditional.</b> It lives in a {@code finally} so
+ * that success, verification failure, and a throwing executor / verifier /
+ * rollback all release the lease exactly once. A throwing collaborator is
+ * treated as an unverified change: it is rolled back, and a failed rollback
+ * escalates to LOCKOUT rather than leaving an unknown world state.</p>
  */
 public final class ActionGateway {
 
@@ -121,7 +128,9 @@ public final class ActionGateway {
                     false, false, false, null, "dry-run only; no lease acquired");
         }
 
-        if (!stateMachine.requestActionSlot(now)) {
+        // Atomic check-and-reserve: no second caller can slip between the
+        // slot check and markActionStarted.
+        if (!stateMachine.tryBeginAction(now)) {
             ErrorCode code = stateMachine.state() == dev.skyguard.api.GuardState.LOCKOUT
                     ? ErrorCode.LOCKOUT : ErrorCode.TIMEOUT;
             audit.record("DEFERRED " + intent.intentId() + " " + code);
@@ -129,7 +138,6 @@ public final class ActionGateway {
                     "action slot unavailable (in-flight, cooldown or LOCKOUT)");
         }
 
-        stateMachine.markActionStarted(now);
         try {
             Optional<Lease> maybeLease = leases.acquire(intent, now);
             if (maybeLease.isEmpty()) {
@@ -141,44 +149,78 @@ public final class ActionGateway {
             audit.record("LEASE " + lease.leaseId() + " " + intent.intentId()
                     + " old=" + intent.oldValue() + " new=" + intent.newValue()
                     + " ttl=" + intent.ttl() + " checksum=" + lease.checksum());
-
-            final String observed;
             try {
-                observed = executor.apply(intent, lease);
-            } catch (Exception e) {
-                boolean rolledBack = rollback.rollback(intent, lease);
-                if (!rolledBack) {
-                    stateMachine.lockout("rollback failed after executor error on " + intent.intentId(), now);
-                }
+                return applyUnderLease(intent, lease, now);
+            } finally {
+                // release() is idempotent. This single line covers every exit
+                // path, including exceptions thrown by collaborators.
                 leases.release(lease.leaseId(), now);
-                audit.record("ERROR " + intent.intentId() + " rolledBack=" + rolledBack);
-                return new ActionResult(intent.intentId(), ErrorCode.INTERNAL_ERROR,
-                        true, false, rolledBack, lease.leaseId(), "executor failed: " + e.getMessage());
             }
-
-            boolean verified = verifier.verify(intent, lease, observed);
-            audit.record("APPLIED " + intent.intentId() + " verified=" + verified
-                    + " observed=" + observed);
-
-            if (!verified) {
-                boolean rolledBack = rollback.rollback(intent, lease);
-                if (!rolledBack) {
-                    stateMachine.lockout("rollback failed after verification of " + intent.intentId(), now);
-                    audit.record("LOCKOUT " + intent.intentId() + " rollback failed");
-                }
-                leases.release(lease.leaseId(), now);
-                return new ActionResult(intent.intentId(),
-                        rolledBack ? ErrorCode.VERIFICATION_FAILED : ErrorCode.ROLLBACK_FAILED,
-                        true, false, rolledBack, lease.leaseId(),
-                        rolledBack ? "verification failed, rolled back" : "verification AND rollback failed");
-            }
-
-            leases.release(lease.leaseId(), now);
-            audit.record("COMMITTED " + intent.intentId() + " " + lease.leaseId());
-            return new ActionResult(intent.intentId(), ErrorCode.OK,
-                    true, true, false, lease.leaseId(), "applied and verified");
         } finally {
             stateMachine.markActionFinished();
+        }
+    }
+
+    private ActionResult applyUnderLease(ActionIntent intent, Lease lease, Instant now) {
+        final String observed;
+        try {
+            observed = executor.apply(intent, lease);
+        } catch (Exception e) {
+            return recoverAfterFailure(intent, lease, now, ErrorCode.INTERNAL_ERROR,
+                    "executor failed: " + e.getMessage(), e);
+        }
+
+        final boolean verified;
+        try {
+            verified = verifier.verify(intent, lease, observed);
+        } catch (RuntimeException e) {
+            return recoverAfterFailure(intent, lease, now, ErrorCode.VERIFICATION_FAILED,
+                    "verifier threw: " + e.getMessage(), e);
+        }
+        audit.record("APPLIED " + intent.intentId() + " verified=" + verified
+                + " observed=" + observed);
+
+        if (!verified) {
+            boolean rolledBack = attemptRollback(intent, lease);
+            if (!rolledBack) {
+                stateMachine.lockout("rollback failed after verification of " + intent.intentId(), now);
+                audit.record("LOCKOUT " + intent.intentId() + " rollback failed");
+            }
+            return new ActionResult(intent.intentId(),
+                    rolledBack ? ErrorCode.VERIFICATION_FAILED : ErrorCode.ROLLBACK_FAILED,
+                    true, false, rolledBack, lease.leaseId(),
+                    rolledBack ? "verification failed, rolled back" : "verification AND rollback failed");
+        }
+
+        audit.record("COMMITTED " + intent.intentId() + " " + lease.leaseId());
+        return new ActionResult(intent.intentId(), ErrorCode.OK,
+                true, true, false, lease.leaseId(), "applied and verified");
+    }
+
+    /** A throwing collaborator leaves the change unverified: roll back, never guess. */
+    private ActionResult recoverAfterFailure(
+            ActionIntent intent, Lease lease, Instant now,
+            ErrorCode code, String detail, Exception cause) {
+        boolean rolledBack = attemptRollback(intent, lease);
+        if (!rolledBack) {
+            stateMachine.lockout("rollback failed after " + detail + " on " + intent.intentId(), now);
+            audit.record("LOCKOUT " + intent.intentId() + " rollback failed after exception");
+        }
+        // Only the exception CLASS is audited: messages may contain host names,
+        // paths or other sensitive data and are deliberately not logged.
+        audit.record("ERROR " + intent.intentId() + " rolledBack=" + rolledBack
+                + " cause=" + cause.getClass().getSimpleName());
+        return new ActionResult(intent.intentId(), code,
+                true, false, rolledBack, lease.leaseId(), detail);
+    }
+
+    private boolean attemptRollback(ActionIntent intent, Lease lease) {
+        try {
+            return rollback.rollback(intent, lease);
+        } catch (RuntimeException e) {
+            audit.record("ERROR rollback threw " + e.getClass().getSimpleName()
+                    + " for " + intent.intentId());
+            return false;
         }
     }
 }
