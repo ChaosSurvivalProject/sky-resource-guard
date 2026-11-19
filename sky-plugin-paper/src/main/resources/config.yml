@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 SKY Resource Guard contributors
+#
+# P1.1 default safe baseline. These are the ONLY values this build accepts:
+# PluginConfig.validate() refuses to enable the plugin in any other mode.
+mode: SHADOW
+automation-enabled: false
+write-config-dry-run: true
+unknown-plugin-policy: OBSERVE_ONLY
+
+sampling:
+  interval-ticks: 20
+  max-samples-per-cycle: 16
+
+ai:
+  enabled: false
+  allow-execute: false

@@ -1,0 +1,19 @@
+{
+  "pluginId": "acme-quests",
+  "pluginName": "AcmeQuests",
+  "version": "2.4.0",
+  "description": "Read-only reference spec for a fictional quests plugin. All values below are declared facts, not measurements of a real server.",
+  "packageName": "dev.skyguard.adapter.acmequests",
+  "className": "AcmeQuestsParticipant",
+  "serviceTier": "BACKGROUND",
+  "executionPhase": "BACKGROUND_IO",
+  "faultDomain": "quests-io",
+  "dependencies": ["acme-core"],
+  "capabilities": ["HEALTH_CHECK", "QUEUE_REPORT", "CACHE_REPORT", "DRY_RUN"],
+  "observeOnly": true,
+  "sampling": {
+    "initialQueueDepth": 3,
+    "initialHeapBytes": 2048,
+    "stage": "idle"
+  }
+}

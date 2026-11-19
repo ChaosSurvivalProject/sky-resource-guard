@@ -6,10 +6,34 @@ All notable changes to this project are documented here. This project follows
 
 ## [Unreleased]
 
-Status: still **experimental, not installable on a server**. This is a
-hardening and open-source governance increment: no server artifact was
-resolved, no performance claim was added, and `docs/version-matrix.md` keeps its
-`UNRESOLVED` entries.
+Status: **experimental (P1.1)**. An installable, read-only Purpur/Paper plugin
+now exists, but it has **never been loaded on a live server**. No performance
+claim was added. The Paper API coordinate is now VERIFIED (real SHA-256), while
+the Purpur server build itself remains `UNRESOLVED`.
+
+### Added (P1.1 - installable plugin and AI skill)
+
+- `sky-plugin-paper`: installable `SKYResourceGuard-0.1.0-p1.jar` with
+  `plugin.yml`, fail-closed `SHADOW` config, read-only `/sky` commands,
+  low-frequency participant sampling and `ServiceLoader` auto-discovery.
+  `paper-api` is **compileOnly and never bundled** (a jar check enforces it).
+- AI Skill `skills/sky-adapter-generator`: spec JSON Schema, deterministic
+  generator, templates, example and `SKILL.md` workflow. Generated adapters are
+  OBSERVE_ONLY, decline every mutating lifecycle call, and register themselves
+  through `META-INF/services` so `SkyPlugin` adapts them automatically.
+- `adapters/sky-adapter-generated-acme`: a real, committed, compiled and
+  tested artefact produced by that generator (not a code snippet).
+- `docs/ai-adaptation.md`: AI Provider adaptation rules and the AI-skill
+  adapter workflow, with review checklists and explicit non-goals.
+- 18 regression tests (82 -> 100), including a `ServiceLoader` discovery test
+  that proves the auto-adaptation path.
+- `tools/verify-generated-adapters.py`, `tools/check-plugin-jar.sh` and
+  `tools/check-autodiscovery.sh`, all wired into CI. The last one loads the
+  installable jar and proves `ServiceLoader` finds the generated read-only
+  adapter; `tools/check-dependencies.sh` now audits paper-api.
+- `docs/version-matrix.md`: reproducible Paper API probe, JAR/POM SHA-256 and
+  a P1.1 plugin artifact table. Purpur build and upstream licence stay
+  `UNRESOLVED`.
 
 ### Fixed
 

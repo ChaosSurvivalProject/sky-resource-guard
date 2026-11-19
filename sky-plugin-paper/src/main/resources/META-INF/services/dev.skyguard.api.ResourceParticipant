@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 SKY Resource Guard contributors
+#
+# Auto-discovered by SkyPlugin.onEnable() via java.util.ServiceLoader.
+# This file is the authoritative registry for adapters bundled in this jar.
+# Regenerate it with: python3 tools/sync-generated-services.py
+dev.skyguard.adapter.acmequests.AcmeQuestsParticipant

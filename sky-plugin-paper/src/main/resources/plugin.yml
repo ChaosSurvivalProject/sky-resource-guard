@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 SKY Resource Guard contributors
+name: SKYResourceGuard
+version: 0.1.0-p1
+main: dev.skyguard.plugin.SkyPlugin
+api-version: '1.21'
+author: SKY Resource Guard contributors
+description: Read-only SHADOW-mode resource governance for Purpur 1.21.11 (experimental P1.1)
+website: https://github.com/ChaosSurvivalProject/sky-resource-guard
+
+commands:
+  sky:
+    description: SKY read-only status, participant list and SHADOW report
+    usage: "/sky <status|participants|shadow-report|help>"
+    permission: sky.observe.read
+    aliases: [skyguard]
+
+permissions:
+  sky.observe.read:
+    description: Allows reading SKY status, participants and SHADOW reports
+    default: op

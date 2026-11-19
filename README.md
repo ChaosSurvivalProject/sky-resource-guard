@@ -1,7 +1,7 @@
 # SKY Resource Guard
 
 > 面向 **Minecraft Java 版 Purpur 1.21.11 / Java 21** 的开源、插件式、AI 辅助资源治理与动态保护平台。
-> **当前状态：实验性（P0 可信观测）**。这一版是纯 Java 核心逻辑，**尚不能作为插件安装到服务端**。
+> **当前状态：实验性（P1.1 只读插件）**。已有可安装的只读 SHADOW 插件与 AI Skill 自动适配，但**尚未在真实 Purpur 服务端加载验证**，不触发任何自动动作。
 
 [![CI](https://github.com/ChaosSurvivalProject/sky-resource-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/ChaosSurvivalProject/sky-resource-guard/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -39,7 +39,9 @@ SKY 的目标不是宣称"恒定 20 TPS"或"零延迟"，而是建立一个：
 - 掉落物状态机（NORMAL → MERGED → FROZEN → SERIALIZED → RESTORING → NORMAL）与保护规则；
 - 可运行的 SHADOW 报告 CLI 演示、测试假实现与确定性压测场景；
 - 两个示例适配器（原生 SPI 与 `ExternalPluginAdapter`）；
-- **有界内存与异常安全**：状态机转移历史、事件总线、指标环形缓冲均有容量上限；动作网关在 executor / verifier / rollback 抛异常时同样释放租约并执行回滚，过期租约可回收以恢复旧状态（见 [CHANGELOG.md](CHANGELOG.md)）。
+- **有界内存与异常安全**：状态机转移历史、事件总线、指标环形缓冲均有容量上限；动作网关在 executor / verifier / rollback 抛异常时同样释放租约并执行回滚，过期租约可回收以恢复旧状态（见 [CHANGELOG.md](CHANGELOG.md)）；
+- **可安装的只读插件**：`SKYResourceGuard-0.1.0-p1.jar`（`plugin.yml`、失败关闭的 SHADOW 配置、`/sky status|participants|shadow-report`、低频只读采样），服务端 API 仅编译期依赖、不打包进 jar；
+- **AI Skill 自动适配**：`skills/sky-adapter-generator` 产出 `OBSERVE_ONLY` 适配器，自带 `META-INF/services` 注册，插件启动时经 `ServiceLoader` **自动发现并注册**，无需修改插件主体源码。
 
 **不能做（明确非目标，任务书 §1.2 / §20）**
 
@@ -48,16 +50,17 @@ SKY 的目标不是宣称"恒定 20 TPS"或"零延迟"，而是建立一个：
 > - **不能让 AI 或玩家聊天直接修改生产参数**；AI 不执行任意命令、不热加载代码、不读原始敏感信息。
 > - 不自动执行经济写改、库存/世界/备份删除、封禁或其他不可逆操作。
 
-**本版尚未实现（后续阶段，不伪装完成）**：可安装的 Bukkit/Paper 插件 JAR、`plugin.yml`、真实世界/掉落物操作、AI HTTP 客户端、Purpur 配置写入、MockBukkit 集成测试、JMH 压测。见 [CHANGELOG.md](CHANGELOG.md) 与 `docs/architecture.md`。
+**本版尚未实现 / 尚未验证（后续阶段，不伪装完成）**：在**真实 Purpur 服务端加载并运行**（未测）、真实世界/掉落物操作、MSPT 采集探针、AI HTTP 客户端、Purpur 配置写入、跨插件 classloader 的适配器发现、MockBukkit 集成测试、JMH 压测。插件虽可安装，但当前只做只读观测：不喂 MSPT 给状态机、不推进状态、不触发任何动作。见 [CHANGELOG.md](CHANGELOG.md)、[`docs/version-matrix.md`](docs/version-matrix.md)。
 
 ## 目标平台与版本事实
 
 | 项目 | 值 | 状态 |
 | --- | --- | --- |
 | Java | 21（`release = 21`） | 已验证（CI + 本地 toolchain） |
-| 服务端 | Purpur **1.21.11**（用户锁定版本） | **UNRESOLVED**：具体 build、SHA-256、上游 Paper build 未能复核 |
-| 上游 API | Bukkit/Paper 公开 API 优先 | P1 起接入，本版零服务端依赖 |
-| AI | 默认 `deepseek-flash`，可替换 | 默认 `enabled: false`，本版无网络调用 |
+| 编译期 API | `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT` | **已验证**：实测坐标、快照 build 与 JAR/POM SHA-256（见版本矩阵） |
+| 服务端 | Purpur **1.21.11**（用户锁定版本） | **UNRESOLVED**：服务端 jar / 具体 build / SHA-256 未复核，**未在真实服务端加载** |
+| 插件产物 | `SKYResourceGuard-0.1.0-p1.jar` | 已构建并检查内容；**未做服务端运行验证** |
+| AI | 默认 `deepseek-flash`，可替换 | 默认 `enabled: false`，**本版无网络调用、不装配 Provider** |
 
 **我们不编造构建号、下载链接或性能数字。** 详见 [`docs/version-matrix.md`](docs/version-matrix.md) —— 未复核项一律标 `UNRESOLVED`，并给出 `PROBE PLAN`。
 
@@ -65,12 +68,16 @@ SKY 的目标不是宣称"恒定 20 TPS"或"零延迟"，而是建立一个：
 
 ```bash
 # 需要 JDK 21（Gradle toolchain 会自动选择）
-./gradlew clean build          # 编译 + 单元测试 + javadoc
-./gradlew :sky-cli:run         # 运行 SHADOW 只读报告演示
-./gradlew test                 # 仅测试
+./gradlew clean build                 # 编译 + 单元测试 + javadoc
+./gradlew :sky-cli:run                # 运行 SHADOW 只读报告演示
+./gradlew :sky-plugin-paper:jar       # 产出可安装插件 jar
+python3 tools/verify-generated-adapters.py   # 校验 AI Skill 生成物与注册项
+bash tools/check-plugin-jar.sh               # 校验 jar 内容（服务端 API 未打包）
 ```
 
-`sky-api`、`sky-core`、`sky-audit` **不依赖任何服务端或 AI 网络**，可在无 Minecraft 环境下完整测试。
+**安装（实验性）**：把 `sky-plugin-paper/build/libs/SKYResourceGuard-0.1.0-p1.jar` 放进服务端 `plugins/`，启动后默认进入 SHADOW 只读模式，用 `/sky status` 查看状态。生成的适配器由 `ServiceLoader` 自动注册。**该插件尚未在真实 Purpur 服务端加载验证**，首次部署请在测试服观察，不要直接上生产。
+
+`sky-api`、`sky-core`、`sky-audit` **不依赖任何服务端或 AI 网络**，可在无 Minecraft 环境下完整测试；只有 `sky-plugin-paper` 在编译期引用 Paper 公开 API。
 
 ## 模块边界
 
@@ -86,8 +93,10 @@ SKY 的目标不是宣称"恒定 20 TPS"或"零延迟"，而是建立一个：
 | `sky-audit` | audit | 哈希链日志、脱敏、诊断包 |
 | `sky-cli` | cli | 命令解析、dry-run、SHADOW 演示 |
 | `sky-bootstrap` | bootstrap | 纯 Java 装配与兼容检查 |
+| `sky-plugin-paper` | plugin | 可安装 Purpur/Paper 插件：只读命令、采样、`ServiceLoader` 自动适配 |
 | `sky-testkit` / `sky-benchmarks` | test | 假实现、故障注入、确定性回放 |
-| `adapters/*` | adapters | 两个独立版本化的示例适配器，默认不随核心启用 |
+| `adapters/*` | adapters | 两个示例适配器 + 一个由 AI Skill 生成并入库的 `OBSERVE_ONLY` 适配器 |
+| `skills/sky-adapter-generator` | AI skill | spec Schema、确定性生成器、模板与工作流 |
 
 见 [`docs/architecture.md`](docs/architecture.md)、[`docs/spi.md`](docs/spi.md)。
 
@@ -159,6 +168,13 @@ public final class MyPluginParticipant implements ResourceParticipant {
 ## AI 隐私边界
 
 AI 可以聚类错误、解释时间线、提出假设、推荐预注册动作、生成 dry-run 计划；**不可以**执行命令、绕过权限、生成热加载代码、修改核心 jar、访问原始敏感信息或把玩家文本当作管理员指令。异步边界为：事件摘要 → 脱敏 → 有界队列 → 限流 → HTTP → Schema 校验 → 建议 → 本地策略 → 人工/自动批准。AI 离线不影响 P0/P1 保护。日志、错误报告和 AI 请求必须脱敏 UUID、IP、聊天原文、坐标、背包 NBT、令牌、口令和内部主机名。
+
+## AI 适配：Provider 与 Skill
+
+两条路径，完整规则见 [`docs/ai-adaptation.md`](docs/ai-adaptation.md)：
+
+1. **接入 AI Provider** —— `AiProvider` SPI、`AiConfig`（默认关闭、`allowExecute` 强制 false、密钥只能是 `secret:` 引用）、`AdviceSchemaValidator` 与 `advice-proposal` JSON Schema。当前**只有契约层**，插件不装配 Provider、不发起网络请求。
+2. **用 AI Skill 生成适配器** —— [`skills/sky-adapter-generator/SKILL.md`](skills/sky-adapter-generator/SKILL.md)：写事实 spec → 生成器产出完整模块 → `META-INF/services` 注册 → 插件 `ServiceLoader` 自动发现。生成代码强制 `OBSERVE_ONLY`、拒绝一切变更类生命周期调用，并附带契约测试与人工审查清单。示例生成物在 `adapters/sky-adapter-generated-acme`。
 
 ## 回滚与卸载
 

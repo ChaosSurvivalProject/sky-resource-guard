@@ -25,4 +25,6 @@ include(
     ":sky-benchmarks",
     ":adapters:sky-adapter-selfexample-a",
     ":adapters:sky-adapter-selfexample-b",
+    ":adapters:sky-adapter-generated-acme",
+    ":sky-plugin-paper",
 )

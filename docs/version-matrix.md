@@ -5,7 +5,8 @@
 > marked `UNRESOLVED` with a probe plan. Production releases must not use a
 > floating `latest`.
 
-Last review: 2026-11-13 · Reviewer: initial implementation agent (P0)
+Last review: 2026-11-20 · Reviewer: implementation agent (P1.1 increment)
+Previous review: 2026-11-13 (P0, superseded by the reproducible probe below)
 
 ## Runtime baseline
 
@@ -22,45 +23,76 @@ Last review: 2026-11-13 · Reviewer: initial implementation agent (P0)
 
 | Item | Value | Status |
 | --- | --- | --- |
-| Minecraft version | 1.21.11 (user-locked target, not "latest") | **UNRESOLVED** |
-| Server fork | Purpur | **UNRESOLVED** |
+| Minecraft version | 1.21.11 (user-locked target, not "latest") | **UNRESOLVED** (server jar not obtained) |
+| Server fork | Purpur | **UNRESOLVED** (no Purpur server jar verified) |
+| Paper API coordinate | `io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT` | **VERIFIED** (reproducible probe below) |
+| Paper API snapshot timestamp / build | `20260511.115010-91` | **VERIFIED** (from that version's maven-metadata.xml) |
+| Paper API JAR SHA-256 | `c577b181c11a8674310e56c92a91e31c010b7f04c9bd10b91c3be18374401070` | **VERIFIED** (downloaded, `sha256sum`) |
+| Paper API POM SHA-256 | `cc6f86c850e5199decac1364fc6110f32c4fe7df31a68700438eeaaa190b38ae` | **VERIFIED** (downloaded, `sha256sum`) |
 | Purpur API version + concrete build | not pinned | **UNRESOLVED** |
 | Purpur JAR SHA-256 | not obtained | **UNRESOLVED** |
-| Upstream Paper build | not obtained | **UNRESOLVED** |
-| Purpur proprietary config keys in use | none read or written in P0 | **UNRESOLVED** |
+| Upstream Paper server build | not obtained (API artifact is not the server jar) | **UNRESOLVED** |
+| Purpur proprietary config keys in use | none read or written in P0/P1.1 | **UNRESOLVED** |
+| Server-side runtime compatibility | **not tested** | **UNRESOLVED** |
+
+> The installable plugin is compiled against the **Paper public API**, which a
+> Purpur fork also exposes. That is a compatibility *assumption* about the API
+> surface, **not** a verified Purpur build. No Purpur-specific API or config key
+> is referenced anywhere in the codebase.
 
 ### What was actually checked (reproducible)
 
-The following live queries were run on 2026-11-13 from the build sandbox. They
-confirm that the repositories are reachable and that 1.21.11-era coordinates
-exist, **but they do not identify the locked, verified Purpur build**:
+Run on **2026-11-20** from the build sandbox. Unlike the P0 probe (which only
+saw RC/pre-release coordinates), a stable `1.21.11-R0.1-SNAPSHOT` artifact now
+exists and was downloaded and hashed:
 
 ```bash
-curl -s https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml
-#   -> HTTP 200; contains 1.21.11-rc1/rc2/rc3, 1.21.11-pre3/pre4 -R0.1-SNAPSHOT
-curl -s -o /dev/null -w '%{http_code}' https://repo.purpurmc.org/snapshots/org/purpurmc/purpur/purpur-api/maven-metadata.xml
-#   -> 200 (existence only; contents not used as a pinned coordinate)
+BASE=https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api
+curl -sL "$BASE/maven-metadata.xml"        # HTTP 200; <release> is a 26.x build
+grep -o '<version>1\.21\.11[^<]*</version>'  # 7 versions incl. 1.21.11-R0.1-SNAPSHOT
+curl -sL "$BASE/1.21.11-R0.1-SNAPSHOT/maven-metadata.xml"
+#   -> snapshot timestamp 20260511.115010, buildNumber 91
+curl -sL --fail -o paper-api.jar "$BASE/1.21.11-R0.1-SNAPSHOT/paper-api-1.21.11-R0.1-20260511.115010-91.jar"
+curl -sL --fail -o paper-api.pom "$BASE/1.21.11-R0.1-SNAPSHOT/paper-api-1.21.11-R0.1-20260511.115010-91.pom"
+sha256sum paper-api.jar paper-api.pom
+#   -> c577b181c11a8674310e56c92a91e31c010b7f04c9bd10b91c3be18374401070  jar
+#   -> cc6f86c850e5199decac1364fc6110f32c4fe7df31a68700438eeaaa190b38ae  pom
+unzip -l paper-api.jar | grep 'org/bukkit/plugin/java/JavaPlugin.class'  # present
 ```
 
-Those Paper coordinates are **release-candidate / pre-release snapshots**, not a
-verified Purpur 1.21.11 build. Pinning them here would violate §2.1.
-Consequently no PaperMC/Purpur repository is declared in `build.gradle.kts` and
-no server artifact is resolved in P0.
+Purpur was probed too, but is **not** pinned:
+
+```bash
+curl -sL https://repo.purpurmc.org/snapshots/org/purpurmc/purpur/purpur-api/maven-metadata.xml
+#   -> HTTP 200; <latest> = 26.3.build.2660-stable, lastUpdated 20261118
+curl -sL .../purpur-api/1.21.11-R0.1-SNAPSHOT/maven-metadata.xml
+#   -> HTTP 200; contains 1.21.11-R0.1-20260404.222700-31
+```
+
+The Purpur repository's version naming is inconsistent with a pinned 1.21.11
+server build, and **no Purpur server jar was obtained or hashed**. Pinning it
+here would violate §2.1, so the plugin deliberately depends on the Paper API
+only and calls no Purpur-specific API.
 
 ```text
-UNRESOLVED: exact Purpur 1.21.11 build id, upstream Paper build, JAR SHA-256,
-            JDK vendor/build, OS image, and the installed plugin list/versions.
-ASSUMPTION: the operator's locked "Purpur 1.21.11" exists and exposes the
-            standard Bukkit/Paper API surface; Purpur-specific keys are unknown.
-PROBE PLAN: 1) obtain the exact server jar and record `sha256sum`;
-            2) start a throwaway server with `--version` / startup probe;
+VERIFIED:   Paper API coordinate, snapshot timestamp/build, JAR + POM SHA-256,
+            presence of the Bukkit plugin API in that jar.
+UNRESOLVED: exact Purpur 1.21.11 build id, Purpur server JAR SHA-256, upstream
+            Paper SERVER build, JDK vendor/build, OS image, paper-api upstream
+            licence (its POM declares no <licenses> block; upstream LICENSE
+            probes returned 404), cross-class-loader service discovery,
+            installed plugin list/versions, and any live-server behaviour.
+ASSUMPTION: the operator's locked "Purpur 1.21.11" exposes the standard
+            Bukkit/Paper API surface; Purpur-specific keys are unknown.
+PROBE PLAN: 1) obtain the exact Purpur server jar and record `sha256sum`;
+            2) start a throwaway server with a startup probe;
             3) enumerate `Bukkit.getServer().getVersion()`, plugin list and
                Purpur config keys via a read-only capability probe;
             4) record JDK `java -version`, OS and image digest;
-            5) write results back here with verification date before any
-               platform module resolves a server dependency.
-FALLBACK:   platform adapters stay in read-only / suggest mode; unknown keys are
-            reported but never written; no server API type enters sky-core.
+            5) verify the plugin actually loads and run the read-only commands;
+            6) write results back here with a verification date.
+FALLBACK:   adapters stay OBSERVE_ONLY; unknown keys are reported but never
+            written; no server API type enters sky-api / sky-core / sky-audit.
 ```
 
 ## Plugin / adapter inventory
@@ -74,12 +106,18 @@ FALLBACK:   platform adapters stay in read-only / suggest mode; unknown keys are
 
 ## Known incompatibilities
 
-- No server artifact is linked, therefore **no server-side compatibility has
-  been tested**. Do not read "builds on JDK 21" as "runs on Purpur 1.21.11".
-- Purpur-specific config keys are treated as unknown: reported, never written.
+- The Paper API artifact is now resolved, but **no Purpur server jar has been
+  loaded**, so server-side compatibility is still **untested**. Do not read
+  "builds on JDK 21 + Paper API" as "runs on Purpur 1.21.11".
+- Only the Paper public API is referenced. Purpur-specific config keys are
+  treated as unknown: reported, never written.
 - Cross-minor-version config keys are not assumed stable (§2.2).
 - Reflection is restricted to declared, opt-in, version-bounded probes with
   fail-closed behaviour and an alternative path (`sky-platform-paper`).
+- Cross-class-loader `ServiceLoader` discovery of separately installed plugin
+  jars is UNRESOLVED (P2); only adapters bundled in the SKY jar are discovered.
+- An `api-version` of `1.21` is a Bukkit manifest declaration, not a claim
+  that every 1.21.x server build was tested.
 
 ## Dependencies (license review, §18.1)
 
@@ -87,7 +125,30 @@ FALLBACK:   platform adapters stay in read-only / suggest mode; unknown keys are
 | --- | --- | --- | --- |
 | JUnit Jupiter | 5.11.4 | Eclipse Public License 2.0 | test only |
 | JUnit Platform Launcher | (managed by Jupiter BOM) | EPL 2.0 | test runtime only |
+| `io.papermc.paper:paper-api` | `1.21.11-R0.1-SNAPSHOT` (snapshot `20260511.115010-91`) | **UNRESOLVED** — the published POM declares no `<licenses>` block and upstream LICENSE probes returned 404 | **compileOnly, NOT redistributed** |
 
-No runtime dependency is shipped in P0. No AI SDK, no server jar, no copied
-third-party source. Adding any dependency requires an entry here plus a
-transitive-dependency and security-advisory check.
+`paper-api` is used only to compile `sky-plugin-paper`. It is **not** bundled:
+`tools/check-plugin-jar.sh` fails the build if any `org/bukkit`, `io/papermc`,
+`org/spigotmc` or `net/minecraft` class appears in the installable jar. This
+keeps the GPL-3.0-or-later project free of licence-ambiguous redistributed
+code. Its coordinate and SHA-256 are recorded above; resolving the upstream
+licence statement is part of the PROBE PLAN.
+
+No AI SDK, no server jar, no copied third-party source. Adding any dependency
+requires an entry here plus a transitive-dependency and security-advisory check.
+
+## P1.1 plugin artifact
+
+| Item | Value |
+| --- | --- |
+| Artefact | `sky-plugin-paper/build/libs/SKYResourceGuard-0.1.0-p1.jar` |
+| Descriptor | `plugin.yml` (`api-version: '1.21'`, `main: dev.skyguard.plugin.SkyPlugin`) |
+| Mode | SHADOW / read-only, enforced by `PluginConfig` fail-closed defaults |
+| AI | disabled; no `AiProvider` is assembled and no network call is made |
+| MSPT probe | **UNRESOLVED** — `GuardRuntime.recordTick` is intentionally unused |
+| Auto-adaptation | `ServiceLoader` over `META-INF/services/dev.skyguard.api.ResourceParticipant` |
+| Verified here | jar contents, ServiceLoader registration, 100 unit tests, javadoc |
+| **NOT** verified | loading on a live Purpur server, any command on a live server, any performance number |
+
+The jar was built and inspected in the sandbox. **"Builds on JDK 21" still does
+not mean "runs on Purpur 1.21.11"** until the PROBE PLAN above is executed.

@@ -50,6 +50,12 @@ jobs:
       - name: Build, unit tests and javadoc
         run: ./gradlew clean build javadoc --no-daemon
 
+      - name: Verify AI-generated adapter and installable jar
+        run: |
+          python3 tools/verify-generated-adapters.py
+          bash tools/check-plugin-jar.sh
+          bash tools/check-autodiscovery.sh
+
       - name: Publish PR test artefacts
         if: always()
         uses: actions/upload-artifact@v4

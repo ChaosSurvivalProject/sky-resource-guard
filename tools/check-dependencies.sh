@@ -17,6 +17,8 @@ while IFS= read -r coord; do
     case "$coord" in
         org.junit.jupiter:junit-jupiter:*)
             echo "  approved (EPL-2.0, test only): $coord" ;;
+        io.papermc.paper:paper-api:*)
+            echo "  approved (compileOnly, NOT redistributed; see version-matrix.md): $coord" ;;
         org.gradle:*|dev.skyguard:*)
             echo "  approved (build/internal): $coord" ;;
         *)
@@ -27,6 +29,10 @@ done <<< "$coords"
 
 grep -q 'JUnit Jupiter' docs/version-matrix.md || {
     echo "::error:: dependencies are not recorded in docs/version-matrix.md"
+    exit 1
+}
+grep -q 'io.papermc.paper:paper-api' docs/version-matrix.md || {
+    echo "::error:: paper-api coordinate is not recorded in docs/version-matrix.md"
     exit 1
 }
 echo "[deps] OK - every external dependency is documented and licence-reviewed"
