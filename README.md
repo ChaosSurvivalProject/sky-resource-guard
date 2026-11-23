@@ -1,5 +1,10 @@
 # SKY Resource Guard
 
+<p align="center">
+  <img src="assets/images/banner.png" alt="sky-resource-guard 宣传图" width="820">
+</p>
+
+
 > 面向 **Minecraft Java 版 Purpur 1.21.11 / Java 21** 的开源、插件式、AI 辅助资源治理与动态保护平台。
 > **当前状态：实验性（P1.1 只读插件）**。已有可安装的只读 SHADOW 插件与 AI Skill 自动适配，但**尚未在真实 Purpur 服务端加载验证**，不触发任何自动动作。
 
@@ -13,6 +18,13 @@
 License: **GPL-3.0-or-later** · Java **21** · Package `dev.skyguard.api` · [支持](SUPPORT.md) · [治理](GOVERNANCE.md)
 
 ---
+
+## 效果预览
+
+<p align="center">
+  <img src="assets/images/demo.png" alt="sky-resource-guard 演示图" width="720">
+</p>
+
 
 ## 这个项目要解决的问题
 
